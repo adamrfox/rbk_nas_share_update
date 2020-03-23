@@ -13,7 +13,16 @@ urllib3.disable_warnings()
 
 
 def usage():
-    print("Usage goes here!")
+    sys.stderr.write("Usage: rbk_nas_share_updade.py [-hDFr] [-c config] [-z zone_list] [-p protocol] isilon rubrik\n")
+    sys.stderr.write("-h | --help: Prints this message\n")
+    sys.stderr.write("-D | --DEBUG : Debug mode\n")
+    sys.stderr.write("-F | --force_acl : Force an SMB ACL (overrides the config file)\n")
+    sys.stderr.write("-r | --report : Only show what will be added.  No changes will be made.\n")
+    sys.stderr.write("-c | --config file : Config file\n")
+    sys.stderr.write("-p | --protocol nfs|smb : Only update the specified protocol [default both]\n")
+    sys.stderr.write("-z | --zones zone_list : Only update the specific access zones (comma separated) [default: all]\n")
+    sys.stderr.write("isilon : Name/IP of the Isilon (system zone)\n")
+    sys.stderr.write("rubrik : Name/IP of the Rubrik Cluster\n")
     exit(0)
 
 def python_input (message):
@@ -167,7 +176,6 @@ def add_isilon_host(rubrik, missing_hosts, config):
     add_hosts = []
     for nas in missing_hosts:
         print("Adding Isilon Host: " + nas)
-        print ("ARRAY_SCAN: " + str(config['array_scan']))
         if str(config['array_scan']).lower() == "true":
             add_hosts.append({'hostname': nas, 'hasAgent': False, 'nasConfig': {'vendorType': 'ISILON', 'apiUsername': config['api_user'], 'apiPassword': config['api_password'], 'apiHostname': config['api_host'], 'isIsilonChangelistEnabled': True}})
         else:
@@ -202,7 +210,7 @@ def add_isilon_shares(rubrik, host, protocol, add_list, az_list, export_id_list,
     configuration.verify_ssl = False
     isilon = isi_sdk_8_0.ApiClient(configuration)
     isilon_protocols = isi_sdk_8_0.ProtocolsApi(isilon)
-    print("Add_LIST: " + str(add_list))
+    dprint("Add_LIST: " + str(add_list))
     if protocol == "nfs":
         addr_list = []
         rubrik_net = rubrik.get('internal', '/cluster/me/network_interface', timeout=60)
@@ -265,7 +273,7 @@ def add_isilon_shares(rubrik, host, protocol, add_list, az_list, export_id_list,
                                 add_ips_to_export = True
                         if add_ips_to_export:
                             rc_update = {'root_clients': root_clients}
-                            print (rc_update)
+                            dprint (rc_update)
                             try:
                                 update_exports = isilon_protocols.update_nfs_export(rc_update, export_id_list[share], ignore_unresolvable_hosts=True, ignore_bad_paths=True, zone=zone)
                             except ApiException as e:
@@ -365,7 +373,7 @@ if __name__ == "__main__":
         FORCE_SMB_ACL = bool(config['force_smb_acl'])
     except KeyError:
         pass
-    print ("FORCE_ACL: " + str(FORCE_SMB_ACL))
+    dprint("FORCE_ACL: " + str(FORCE_SMB_ACL))
     if config['rubrik_user'] == "":
         config['rubrik_user'] = python_input("Rubrik User: ")
     if config['rubrik_password'] == "":
@@ -390,9 +398,13 @@ if __name__ == "__main__":
         (share_list, export_id_list) = isln_get_share_list(isilon_host, config['array_user'], config['array_password'], 'smb', False, az_list, config)
         rubrik_share_list = get_rubrik_share_list('SMB', az_list, hs_data)
         smb_add_list = list_compare(share_list, rubrik_share_list, config)
-        add_isilon_shares(rubrik, isilon_host, 'smb', smb_add_list, az_list, export_id_list, nas_host_data, config)
+        print("Shares to add: " + str(smb_add_list))
+        if not REPORT_ONLY:
+            add_isilon_shares(rubrik, isilon_host, 'smb', smb_add_list, az_list, export_id_list, nas_host_data, config)
     if nfs:
         (export_list, export_id_list) = isln_get_share_list(isilon_host, config['array_user'], config['array_password'], 'nfs', False, az_list, config)
         rubrik_export_list = get_rubrik_share_list('NFS', az_list, hs_data)
         nfs_add_list = list_compare(export_list, rubrik_export_list, config)
-        add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
+        print ("Exports to add: " + str(nfs_add_list))
+        if not REPORT_ONLY:
+            add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
