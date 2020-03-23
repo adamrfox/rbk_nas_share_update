@@ -26,4 +26,11 @@ array_scan=false
 # exclude_path=/ifs/.snapshot
 # exclude_share=smb1,smb2
 # exclude_host=172.22.0.80
-
+#
+# Default SLAs and Filesets
+#
+# default_nfs_fileset=nfs_all
+# default_smb_fileset=smb_all
+# default_sla=Bronze
+# default_nfs_sla=Bronze
+# default_smb_sla=Bronze
