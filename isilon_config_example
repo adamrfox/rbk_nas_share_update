@@ -1,0 +1,29 @@
+#
+# Example Config file for an Isilon Array
+#
+# Basic Credentials.
+rubrik_user=admin
+rubrik_password=XXXXX
+array_user=root
+array_password=XXXXX
+#
+# SMB Options
+#
+smb_user=svc_backup@rangers.lab
+smb_password=C0d34fun!
+force_smb_acl=false
+#
+# API Integration Options
+#
+api_user=rubrik
+api_password=xxxxx
+api_host=XXX
+# Turns ChangeList on for new NAS hosts.  Keep false unless running CDM >= 5.2 and OneFS >= 8.2
+array_scan=false
+#
+# Includes and Excludes
+#
+# exclude_path=/ifs/.snapshot
+# exclude_share=smb1,smb2
+# exclude_host=172.22.0.80
+
