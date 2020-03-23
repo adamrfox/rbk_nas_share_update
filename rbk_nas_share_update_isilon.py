@@ -55,7 +55,7 @@ def isln_get_share_list(host, user, password, protocol, zone_only, az_list, conf
     isilon = isi_sdk_8_0.ApiClient(configuration)
 
 # Generate Access Zone list if not given on CLI
-
+    dprint("AZ_LIST: " + str(az_list))
     if not az_list:
         isilon_zones = isi_sdk_8_0.ZonesApi(isilon)
         try:
@@ -76,7 +76,7 @@ def isln_get_share_list(host, user, password, protocol, zone_only, az_list, conf
         sys.stderr.write("Error calling network_pools: " + str(e) + "\n")
         exit(1)
     for p in result_pools.pools:
-        if p.access_zone in hostname.keys():
+        if p.access_zone in hostname.keys() or p.access_zone not in az_list:
             continue
         if p.sc_dns_zone:
             hostname[p.access_zone] = p.sc_dns_zone
@@ -250,7 +250,7 @@ def add_isilon_shares(rubrik, host, protocol, add_list, az_list, export_id_list,
             elif protocol == "nfs":
                 print("Adding Export: " + nas_host + ":" + share)
                 export_info = isilon_protocols.get_nfs_export(export_id_list[share], zone=zone)
-                print ("ROOT_MAP: " + str(export_info.exports[0].map_root.user.id))
+                dprint ("ROOT_MAP: " + str(export_info.exports[0].map_root.user.id))
                 if export_info.exports[0].map_root.user.id != "USER:root" and export_info.exports[0].map_root.user.id != "UID:0":
                     root_clients = export_info.exports[0].root_clients
                     nfs_rc_add_list = []
@@ -386,7 +386,6 @@ if __name__ == "__main__":
     rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
 #    print(nas_host_data)
     az_list = isln_get_share_list(isilon_host, config['array_user'], config['array_password'], '', True, az_list, config)
-#    print (az_list)
     missing_hosts = find_missing_hosts(rubrik, az_list, config)
     if missing_hosts:
         print ("Missing Hosts: " + str(missing_hosts))
