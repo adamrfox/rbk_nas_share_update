@@ -280,13 +280,81 @@ def add_isilon_shares(rubrik, host, protocol, add_list, az_list, export_id_list,
                                 sys.stderr.write("Exception calling update_nfs_export: " + str(e))
             payload = {'hostId': host_id, 'shareType': protocol.upper(), 'exportPoint': share}
             dprint("PAYLOAD: " + str(payload))
+            sh_add_flag = True
             try:
                 share_id = rubrik.post('internal', '/host/share', payload, timeout=60)['id']
             except rubrik_cdm.exceptions.APICallException as e:
                 sys.stderr.write("Share add failed: " + str(e) + "\n")
                 skipped_shares.append(share)
+                sh_add_flag = False
+            if sh_add_flag and config['default_nfs_fileset']:
+                add_fileset_sla_to_share(rubrik, config, share_id, protocol)
         if skipped_shares:
             print("Failed Shares on " + nas_host + ": " + str(skipped_shares))
+
+def get_sla_data (rubrik, vers, time_out):
+    if vers < 5:
+        sla_data = rubrik.get('v1', "/sla_domain?primary_cluster=local", timeout=time_out)
+    else:
+        sla_data = rubrik.get('v2', "/sla_domain?primary_cluster=local", timeout=time_out)
+    return (sla_data)
+
+def add_fileset_sla_to_share(rubrik, config, share_id, protocol):
+    if protocol == "nfs":
+        fileset_name = config['default_nfs_fileset']
+    else:
+        fileset_name = config['default_smb_fileset']
+    try:
+        rubrik_fs = rubrik.get('v1', '/fileset_template?name=' + fileset_name)
+    except rubrik_cdm.exceptions.APICallException as e:
+        sys.stderr.write("Exception calling fileset_template : " + str(e) + "\n")
+        exit(2)
+    fs_id = ""
+    fs_add_list = []
+    for fs in rubrik_fs['data']:
+        if fs['name'] == fileset_name:
+            fs_id = fs['id']
+            break
+    if fs_id == "":
+        sys.stderr.write("Can't find fileset template: " + fileset_name)
+        exit(3)
+    payload = {'shareId': share_id, 'templateId': fs_id}
+    if str(config['array_scan']).lower() == "true":
+        payload['isPassthrough']=  True
+    dprint("PAYLOAD: " + str(payload))
+    try:
+        fs_add = rubrik.post('v1', '/fileset', payload, timeout=60)
+    except rubrik_cdm.exceptions.APICallException as e:
+        sys.stderr.write("Failed to add fileset: " + str(e))
+        return()
+    fs_add_list.append(fs_add['id'])
+    if config['default_sla'] != '' or (protocol == "nfs" and config['default_nfs_sla'] != '') or (protocol == "smb" and config['default_smb_sla'] != ''):
+        sla_name = config['default_sla']
+        if protocol == "nfs" and config['default_nfs_sla'] != '':
+            sla_name = config['default_nfs_sla']
+        elif protocol == "smb" and config['default_smb_sla'] != '':
+            print ("SPECIFIC")
+            sla_name = config['default_smb_sla']
+        print("SLA_NAME: " + sla_name)
+        version = rubrik.cluster_version().split('.')
+        version_maj = int(version[0])
+        sla_data = get_sla_data(rubrik, version_maj, 60)
+        sla_id = ""
+        for sld in sla_data['data']:
+            if sld['name'] == sla_name:
+                sla_id = sld['id']
+        if sla_id == "":
+            sys.stderr.write("Can't find SLA: " + sla_name)
+            exit (4)
+        payload = {'managedIds': fs_add_list}
+        dprint("PAYLOAD: " + str(payload))
+        try:
+            rbk_sla = rubrik.post('internal', '/sla_domain/' + str(sla_id) + '/assign', payload, timeout=60)
+        except rubrik_cdm.exceptions.APICallException as e:
+            sys.stderr.write("Failed to assign SLA: " + str(e))
+
+
+
 
 def get_config_from_file(cfg_file):
     cfg_data = {}
@@ -323,6 +391,10 @@ def get_config_from_file(cfg_file):
             cfg_data['force_smb_acl'] = True
     except KeyError:
         pass
+    try:
+        cfg_data['array_scan']
+    except KeyError:
+        cfg_data['array_scan'] = 'false'
     return(cfg_data)
 
 if __name__ == "__main__":
@@ -334,6 +406,7 @@ if __name__ == "__main__":
     config = {}
     VERBOSE = False
     DEBUG = False
+    DUMP_CONFIG = False
     REPORT_ONLY = False
     FORCE_SMB_ACL = False
     CHANGELIST = False
@@ -342,7 +415,7 @@ if __name__ == "__main__":
     rbk_nas_hosts = ()
 
 
-    optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDz:rp:F', ['--help', '--config=', '--verbose', '--DEBUG', '--zones=', '--report', '--protocol=', '--force-acl'])
+    optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDz:rp:FiC', ['--help', '--config=', '--verbose', '--DEBUG', '--zones=', '--report', '--protocol=', '--force-acl', '--dump_config'])
     for opt, a in optlist:
         if opt in ('-h', '--help'):
             usage()
@@ -364,11 +437,16 @@ if __name__ == "__main__":
                 nfs = False
         if opt in ('-F', '--force_acl'):
             FORCE_SMB_ACL = True
+        if opt in ('-C', '--dump_config'):
+            DUMP_CONFIG = True
+            DEBUG = True
     try:
         (isilon_host, rubrik_host) = args
     except ValueError:
         usage()
     dprint("CONFIG: " + str(config))
+    if DUMP_CONFIG:
+        exit(0)
     try:
         FORCE_SMB_ACL = bool(config['force_smb_acl'])
     except KeyError:
