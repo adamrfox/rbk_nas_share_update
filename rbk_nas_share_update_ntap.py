@@ -4,6 +4,7 @@ import sys
 import getopt
 import getpass
 import rubrik_cdm
+import socket
 import urllib3
 urllib3.disable_warnings()
 sys.path.append('./NetApp')
@@ -41,14 +42,26 @@ def ntap_set_err_check(out):
         print("Connection to filer failed" + r + "\n")
         sys.exit(2)
 
-def ntap_get_share_list(host, protocol, svm_list, config):
+def find_missing_hosts(rubrik, svm_list, config):
+    missing_hosts = []
+    nas_hosts = []
+    hosts = rubrik.get('v1', '/host?operating_system_type=NONE')
+    for host in hosts['data']:
+        nas_hosts.append(host['hostname'])
+    for svm_host in svm_list:
+        if (svm_host not in nas_hosts) and (svm_host not in config['exclude_host']):
+            missing_hosts.append(svm_host)
+    return(missing_hosts)
+
+def add_ntap_host(rubrik, missing_hosts, config):
+    return()
+
+
+def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
     addr = ""
     hostname = {}
     host_lookup = ()
-    if svm_list == []:
-        svm_only = True
-    else:
-        svm_only = False
+
 # Set up NetApp API session
 
     try:
@@ -67,46 +80,52 @@ def ntap_get_share_list(host, protocol, svm_list, config):
 
 # Get list of SVMs from NetApp
 
-    if svm_only:
+    if svm_list == {}:
         result = netapp.invoke('vserver-get-iter')
         ntap_invoke_err_check(result)
         vs_info = result.child_get('attributes-list').children_get()
         for vs in vs_info:
             vs_type = vs.child_get_string("vserver-type")
             if vs_type == "data":
-                svm_list.append(vs.child_get_string('vserver-name'))
-        return(svm_list)
+                svm_list[vs.child_get_string('vserver-name')] = ""
 
 # Get list of interfaces on the NetApp.  Find the an applicable interface, grab the IP,
 # then try to get a hostname from it via DNS
 
-    result = netapp.invoke('net-interface-get-iter')
-    ntap_invoke_err_check(result)
-    ints = result.child_get('attributes-list').children_get()
-    for i in ints:
-        protocols = i.child_get('data-protocols').children_get()
+    for svm in svm_list.keys():
+        netapp.set_vserver(svm)
+        print ("SVM_INT: " + svm)
+        result = netapp.invoke('net-interface-get-iter')
+        ntap_invoke_err_check(result)
+        try:
+            ints = result.child_get('attributes-list').children_get()
+        except AttributeError:
+            continue
+        for i in ints:
+            protocols = i.child_get('data-protocols').children_get()
 
-        # Couldn't figure out how to pull the protocols properly, nasty hack.  Should clean up later
+            # Couldn't figure out how to pull the protocols properly, nasty hack.  Should clean up later
 
-        for p in protocols:
-            proto = p.sprintf()
-            proto = proto.replace('<', '>')
-            pf = proto.split('>')
-            if pf[2] == protocol or (pf[2] == "cifs" and protocol == "smb"):
-                svm = i.child_get_string('vserver')
-                addr = i.child_get_string('address')
-                try:
-                    host_lookup = socket.gethostbyaddr(addr)
-                    hostname[svm] = host_lookup[0]
-                except socket.herror:
-                    hostname[svm] = addr
+            for p in protocols:
+                proto = p.sprintf()
+                proto = proto.replace('<', '>')
+                pf = proto.split('>')
+                if pf[2] == "nfs" or pf[2] == "cifs":
+                    addr = i.child_get_string('address')
+                    try:
+                        host_lookup = socket.gethostbyaddr(addr)
+                        svm_list[svm] = host_lookup[0]
+                    except socket.herror:
+                        svm_list[svm] = addr
+    if svm_only:
+        return(svm_list)
 
 # For each SVM, grab the NFS exports of SMB shares.  Generate the share_list structure for main()
 
-    for svm in svm_list:
+    for svm in svm_list.keys():
         svm_share_list = []
         junct_point = {}
-        if do_svms and svm not in do_svms:
+        if svm in config['exclude_hosts']:
             continue
         out = netapp.set_vserver(svm)
         if protocol == "nfs":
@@ -180,7 +199,7 @@ def get_config_from_file(cfg_file):
     return(cfg_data)
 
 if __name__ == "__main__":
-    svm_list = []
+    svm_list = {}
     share_list = []
     rubrik_share_list = []
     export_list = []
@@ -207,7 +226,8 @@ if __name__ == "__main__":
             VERBOSE = True
             DEBUG = True
         if opt in ('-s', '--svms'):
-            svm_list = a.split(',')
+            for s in a.split(','):
+                svm_list[s] = ""
         if opt in ('-r', '--report'):
             REPORT_ONLY = True
         if opt in ('-p', '--protocol'):
@@ -236,6 +256,10 @@ if __name__ == "__main__":
         config['array_password'] = getpass.getpass("Isilon Password: ")
 
     rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
-    if svm_list == []:
-        svm_list = ntap_get_share_list(ntap_host, '', svm_list, config)
-    print (svm_list)
+    svm_list = ntap_get_share_list(ntap_host, '', svm_list, True, config)
+    dprint("SVM: " + str(svm_list))
+    missing_hosts = find_missing_hosts(rubrik, svm_list, config)
+    if missing_hosts:
+        print("Missing Hosts: " + str(missing_hosts))
+        if not REPORT_ONLY:
+            add_ntap_host(rubrik, missing_hosts, config)
