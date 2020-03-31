@@ -48,13 +48,30 @@ def find_missing_hosts(rubrik, svm_list, config):
     hosts = rubrik.get('v1', '/host?operating_system_type=NONE')
     for host in hosts['data']:
         nas_hosts.append(host['hostname'])
-    for svm_host in svm_list:
+    for svm_host in svm_list.values():
+        if svm_host == "":
+            continue
         if (svm_host not in nas_hosts) and (svm_host not in config['exclude_host']):
             missing_hosts.append(svm_host)
     return(missing_hosts)
 
 def add_ntap_host(rubrik, missing_hosts, config):
-    return()
+    add_hosts = []
+    for nas in missing_hosts:
+        print("Adding NetApp Host: " + nas)
+        if str(config['array_scan']).lower() == "true":
+            add_hosts.append({'hostname': nas, 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password'], 'isNetAppSnapDiffEnabled': True}})
+        else:
+            add_hosts.append({'hostname': nas, 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password']}})
+
+    dprint("Host Add: " + str(add_hosts))
+    nas_result = rubrik.post('internal', '/host/bulk', add_hosts, timeout=60)
+    if config['smb_user']:
+        (user, domain) = config['smb_user'].split('@')
+        for nas in nas_result['data']:
+            nas_creds = {'hostId': str(nas['id']), 'domain': domain, 'username': user, 'password': config['smb_password']}
+            dprint("NAS_ADD: " + str(nas_creds))
+            nas_creds_result = rubrik.post('internal', '/host/share_credential', nas_creds, timeout=60)
 
 
 def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
@@ -94,7 +111,6 @@ def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
 
     for svm in svm_list.keys():
         netapp.set_vserver(svm)
-        print ("SVM_INT: " + svm)
         result = netapp.invoke('net-interface-get-iter')
         ntap_invoke_err_check(result)
         try:

@@ -333,9 +333,7 @@ def add_fileset_sla_to_share(rubrik, config, share_id, protocol):
         if protocol == "nfs" and config['default_nfs_sla'] != '':
             sla_name = config['default_nfs_sla']
         elif protocol == "smb" and config['default_smb_sla'] != '':
-            print ("SPECIFIC")
             sla_name = config['default_smb_sla']
-        print("SLA_NAME: " + sla_name)
         version = rubrik.cluster_version().split('.')
         version_maj = int(version[0])
         sla_data = get_sla_data(rubrik, version_maj, 60)
