@@ -154,6 +154,11 @@ def ntap_get_svm_list(host, protocol, config):
             int_name = i.child_get_string('interface-name')
             protocols = i.child_get('data-protocols').children_get()
             addr = i.child_get_string('address')
+            try:
+                host_lookup = socket.gethostbyaddr(addr)
+                addr = host_lookup[0]
+            except socket.herror:
+                pass
             # Couldn't figure out how to pull the protocols properly, nasty hack.  Should clean up later
             proto_list = []
             for p in protocols:
