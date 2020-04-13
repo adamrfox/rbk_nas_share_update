@@ -48,6 +48,8 @@ def find_missing_hosts(rubrik, svm_list, config):
     hosts = rubrik.get('v1', '/host?operating_system_type=NONE')
     for host in hosts['data']:
         nas_hosts.append(host['hostname'])
+    print ("NAS_HOSTS: " + str(nas_hosts))
+    print ("SVM_LIST: " + str(svm_list))
     for svm_host in svm_list.values():
         if svm_host == "":
             continue
@@ -74,14 +76,42 @@ def add_ntap_host(rubrik, missing_hosts, config):
             nas_creds_result = rubrik.post('internal', '/host/share_credential', nas_creds, timeout=60)
 
 
-def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
+def get_rubrik_share_list(protocol, az_list, hs_data):
+    share_data = {}
+    for zone in az_list:
+        share_list = []
+        share_data[zone] = share_list
+        for share in hs_data['data']:
+            if share['hostname'] == az_list[zone] and share['shareType'] == protocol:
+                share_list.append(str(share['exportPoint']))
+        share_data[az_list[zone]] = share_list
+    return (share_data)
+
+def list_compare(array_list, rubrik_list, config):
+    add_list = {}
+#    print ("ARRAY: " + str(array_list))
+    for zone in array_list:
+        shares_to_add = []
+        if zone not in config['exclude_host']:
+            for share_data in array_list[zone]:
+                (share, path) = share_data.split(':')
+                if share not in config['exclude_share']:
+                    for ex_path in config['exclude_path']:
+                        if path.startswith(ex_path):
+                            continue
+                        if share not in rubrik_list[zone]:
+                            shares_to_add.append(share)
+        add_list[zone] = shares_to_add
+    return(add_list)
+
+def ntap_get_svm_list(host, protocol, config):
     addr = ""
     hostname = {}
     host_lookup = ()
     share_list = {}
+    host_list = {}
 
-# Set up NetApp API session
-
+    # Set up NetApp API session
     try:
         _create_unverified_https_context = ssl._create_unverified_context
     except AttributeError:
@@ -111,6 +141,8 @@ def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
 # then try to get a hostname from it via DNS
 
     for svm in svm_list.keys():
+        print("DEB: SVM: " + svm)
+        int_list = []
         netapp.set_vserver(svm)
         result = netapp.invoke('net-interface-get-iter')
         ntap_invoke_err_check(result)
@@ -121,20 +153,50 @@ def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
         for i in ints:
             int_name = i.child_get_string('interface-name')
             protocols = i.child_get('data-protocols').children_get()
-
+            addr = i.child_get_string('address')
             # Couldn't figure out how to pull the protocols properly, nasty hack.  Should clean up later
-
+            proto_list = []
+            for p in protocols:
+                proto = p.sprintf()
+                proto = proto.replace('<', '>')
+                pf = proto.split('>')
+                proto_list.append(pf[2])
+            int_list.append({'address': addr, "protocols": proto_list})
+            cand_list = []
+            for int_cand in int_list:
+                print ("CAND: " + str(int_cand))
+                if protocol == "nfs,cifs":
+                    if int_cand['protocols'] == ['nfs', 'cifs']:
+                        cand_list = [int_cand['address']]
+                        break
+                    elif int_cand['protocols'] == "nfs":
+                        cand_list.append(int_cand['address'])
+                    elif int_cand['protocols'] == "cifs":
+                        cand_list.append(int_cand['address'])
+                elif protocol == "nfs":
+                    if int_cand['protocols'] == ["nfs"]:
+                        cand_list = [int_cand['address']]
+                        break
+                    elif int_cand['protocols'] == "nfs,cifs":
+                        cand_list.append(int_cand['address'])
+                elif protocol == "cifs":
+                    if int_cand['protocols'] == ["cifs"]:
+                        cand_list = [int_cand['address']]
+                        break
+                    elif int_cand['protocols'] == ["nfs","cifs"]:
+                        cand_list.append(int_cand['address'])
+            host_list[svm] = cand_list
+    return(host_list)
+"""
             for p in protocols:
                 proto = p.sprintf()
                 proto = proto.replace('<', '>')
                 pf = proto.split('>')
                 found = False
-                if svm_only:
-                    continue
-                elif protocol == "smb" and pf[2] == "cifs":
+                if "smb" in protocol and "cifs" in pf[2]:
                     addr = i.child_get_string('address')
                     found = True
-                elif protocol == "nfs" and pf[2] == "nfs":
+                elif "nfs" in protocol and "nfs" in pf[2]:
                     addr = i.child_get_string('address')
                     found = True
                 if found:
@@ -145,9 +207,11 @@ def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
                         svm_list[svm] = addr
 
     if svm_only:
-        return(svm_list)
+        return (svm_list)
+"""
+def new_func():
     dprint("SVM_LIST2: " + str(svm_list))
-# For each SVM, grab the NFS exports of SMB shares.  Generate the share_list structure for main()
+    # For each SVM, grab the NFS exports of SMB shares.  Generate the share_list structure for main()
     for svm in svm_list.keys():
         svm_share_list = []
         junct_point = {}
@@ -182,11 +246,28 @@ def ntap_get_share_list(host, protocol, svm_list, svm_only, config):
                 continue
             for sh in attr:
                 path = sh.child_get_string('path')
+                sh_name = sh.child_get_string('share-name')
                 if path == "/":                                 # Exclude root volumes
                     continue
-                svm_share_list.append(sh.child_get_string('share-name'))
+                svm_share_list.append(sh_name + ":" + path)
         share_list[svm_list[svm]] = svm_share_list
     return (share_list)
+
+def get_hostid_from_nas_data(host, nas_host_data):
+    for host_inst in nas_host_data['data']:
+        if host_inst['hostname'] == host:
+            return (host_inst['id'])
+
+def add_ntap_shares(rubrik, host, protocol, add_list, svm_list, nas_host_data, config):
+    dprint("ADD_LIST: " + str(add_list))
+    for nas_host in add_list:
+        host_id = get_hostid_from_nas_data(nas_host, nas_host_data)
+        skipped_shares = []
+        for share in add_list[nas_host]:
+            payload = {'hostId': host_id, 'shareType': protocol.upper(), 'exportPoint': share}
+            dprint("PAYLOAD: " + str(payload))
+
+
 
 def get_config_from_file(cfg_file):
     cfg_data = {}
@@ -227,9 +308,9 @@ def get_config_from_file(cfg_file):
 if __name__ == "__main__":
     svm_list = {}
     share_list = []
-    rubrik_share_list = []
+    rubrik_share_list = {}
     export_list = []
-    rubrik_export_list = []
+    rubrik_export_list = {}
     config = {}
     VERBOSE = False
     DEBUG = False
@@ -280,11 +361,17 @@ if __name__ == "__main__":
         config['array_user'] = python_input("Isilon User: ")
     if config['array_password'] == "":
         config['array_password'] = getpass.getpass("Isilon Password: ")
-
+    if smb and not nfs:
+        p_str = "cifs"
+    elif not smb and nfs:
+        p_str = "nfs"
+    else:
+        p_str = "nfs,cifs"
     rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
-    svm_list = ntap_get_share_list(ntap_host, '', svm_list, True, config)
-    dprint("SVM: " + str(svm_list))
+    svm_list = ntap_get_svm_list(ntap_host, p_str, config)
+    dprint("SVM_LIST1: " + str(svm_list))
     missing_hosts = find_missing_hosts(rubrik, svm_list, config)
+    dprint("MISSING HOSTS: " + str(missing_hosts))
     if missing_hosts:
         print("Missing Hosts: " + str(missing_hosts))
         if not REPORT_ONLY:
@@ -293,4 +380,11 @@ if __name__ == "__main__":
     hs_data = rubrik.get('internal', '/host/share')
     if smb:
         share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, False, config)
-        print ("SHARE_LIST: " + str(share_list))
+        dprint("SMB SHARE LIST: " + str(share_list))
+        rubrik_share_list = get_rubrik_share_list('SMB', svm_list, hs_data)
+        dprint("RBK SHARE LIST: " + str(rubrik_share_list))
+        smb_add_list = list_compare(share_list, rubrik_share_list, config)
+        print ("Shares to add: " + str(smb_add_list))
+        if not REPORT_ONLY:
+            add_ntap_shares(rubrik, ntap_host, 'smb', smb_add_list, svm_list, nas_host_data, config)
+
