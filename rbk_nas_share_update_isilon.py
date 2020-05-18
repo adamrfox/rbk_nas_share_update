@@ -319,7 +319,7 @@ def add_fileset_sla_to_share(rubrik, config, share_id, protocol):
         sys.stderr.write("Can't find fileset template: " + fileset_name)
         exit(3)
     payload = {'shareId': share_id, 'templateId': fs_id}
-    if str(config['array_scan']).lower() == "true":
+    if str(config['nas_da']).lower() == "true":
         payload['isPassthrough']=  True
     dprint("PAYLOAD: " + str(payload))
     try:
