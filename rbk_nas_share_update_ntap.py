@@ -229,15 +229,43 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
         out = netapp.set_vserver(svm)
         share_host = get_host_from_svm_list(svm_list[svm], protocol)
         if protocol == "nfs":
-            result = netapp.invoke('volume-get-iter')
+            api = NaElement('volume-get-iter')
+            l1 = NaElement('desired-attributes')
+            api.child_add(l1)
+            l2 = NaElement('volume-attributes')
+            l1.child_add(l2)
+            l2_1 = NaElement('volume-id-attributes')
+            l2.child_add(l2_1)
+            l2_1.child_add_string('name', '<name>')
+            l2_1.child_add_string('junction-path', '<junction-path>')
+            l2_2 = NaElement('volume-state-attributes')
+            l2.child_add(l2_2)
+            l2_2.child_add_string('is-node-root', '<is-node-root>')
+            l2_2.child_add_string('is-vserver-root', '<is-vserver-root')
+            api.child_add_string('max-records', 5000)
+            result = netapp.invoke_elem(api)
             ntap_invoke_err_check(result)
             vol_attrs = result.child_get('attributes-list').children_get()
             for v in vol_attrs:
                 vid_attrs = v.child_get('volume-id-attributes')
-                volume = vid_attrs.child_get_string('name')
-                junction = vid_attrs.child_get_string('junction-path')
-                junct_point[volume] = junction
-            result = netapp.invoke('qtree-list-iter')
+                vst_attrs = v.child_get('volume-state-attributes')
+                node_root = vst_attrs.child_get_string('is-node-root')
+                svm_root = vst_attrs.child_get_string('is-vserver-root')
+                if node_root == "false" and svm_root == "false":
+                    volume = vid_attrs.child_get_string('name')
+                    print ("FOUND VOL: " + volume)
+                    junction = vid_attrs.child_get_string('junction-path')
+                    junct_point[volume] = junction
+            dprint("JUNCTION_POINTS for " + svm + ": " + str(junct_point))
+            api = NaElement('qtree-list-iter')
+            l1 = NaElement('desired-attributes')
+            api.child_add(l1)
+            l2 = NaElement('qtree-info')
+            l1.child_add(l2)
+            l2.child_add_string('qtree', '<qtree>')
+            l2.child_add_string('volume', '<volume>')
+            api.child_add_string('max-records', 5000)
+            result = netapp.invoke_elem(api)
             ntap_invoke_err_check(result)
             qt_attrs = result.child_get('attributes-list').children_get()
             for qt in qt_attrs:
@@ -250,10 +278,12 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
                     try:
                         vol_j = junct_point[volume]
                     except KeyError:
+                        print("KEY_ERROR")
                         continue
                 else:
                     vol_j = junct_point[volume] + "/" + qtree
                 print ("VJ_TYPE: " + str(type(vol_j)))
+                print ("VOL_J:" + str(vol_j))
                 if vol_j != "/" and type(vol_j) is unicode:
                     svm_share_list.append(vol_j + ":" + vol_j)
         elif protocol == "cifs" or protocol == "smb":
@@ -507,5 +537,4 @@ if __name__ == "__main__":
             add_ntap_shares(rubrik, ntap_host, 'nfs', nfs_add_list, svm_list, nas_host_data, config)
 
 
-##TODO Deal with volume shares that aren't root
 ##TODO Think about SMB over-riding NFS
