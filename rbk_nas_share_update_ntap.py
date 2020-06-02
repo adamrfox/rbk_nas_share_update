@@ -203,6 +203,21 @@ def get_host_from_svm_list(svm, protocol):
             return(svm_inst['address'])
     return("")
 
+def purge_overlapping_shares(share_list):
+    for svm in share_list.values():
+        for x in svm:
+            x_split = x.split(':')
+            x_val = x_split[1]
+            for y in svm:
+                y_split = y.split(':')
+                y_val = y_split[1]
+                if x_val == y_val:
+                    continue
+                if y_val.startswith(x_val + "/"):
+                    dprint("PURGING " + x)
+                    svm.remove(x)
+    return (share_list)
+
 def ntap_get_share_list(ntap_host, protocol, svm_list, config):
     share_list = {}
     dprint("SVM_LIST2: " + str(svm_list))
@@ -300,6 +315,8 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
                     continue
                 svm_share_list.append(sh_name + ":" + path)
         share_list[share_host] = svm_share_list
+    if config['purge_overlaps'] != "false":
+        purge_overlapping_shares(share_list)
     return (share_list)
 
 def get_hostid_from_nas_data(host, nas_host_data):
@@ -374,7 +391,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
             sys.stderr.write("Failed to assign SLA: " + sla_name + " : " + str(e))
 
 
-def add_ntap_shares(rubrik, host, protocol, add_list, svm_list, nas_host_data, config):
+def add_ntap_shares(rubrik, protocol, add_list, nas_host_data, config):
     dprint("ADD_LIST: " + str(add_list))
     for nas_host in add_list:
         host_id = get_hostid_from_nas_data(nas_host, nas_host_data)
@@ -396,6 +413,26 @@ def add_ntap_shares(rubrik, host, protocol, add_list, svm_list, nas_host_data, c
         if skipped_shares:
             print("Failed Shares on " + nas_host + ": " + str(skipped_shares))
 
+def get_share_path(share_list, host, share_name):
+    for share in share_list[host]:
+        (name, path) = share.split(':')
+        if name == share_name:
+            return(path)
+    return ("")
+
+def prefer_smb_over_nfs(rubrik, hs_data, share_list):
+    hs_smb = {}
+    hs_nfs= {}
+    for share in hs_data['data']:
+        if share['shareType'] == "SMB":
+            path = get_share_path(share_list, share['hostname'], share['exportPoint'])
+            hs_smb[path] = {'id': share['id'], 'host': share['hostname']}
+        else:
+            hs_nfs[share['exportPoint']] = {'id': share['id'], 'host': share['hostname']}
+    for export in hs_nfs:
+        if export in hs_smb.keys():
+            print ("Cleaning up " + export)
+            rubrik.delete('internal', '/host/share/' + str(hs_nfs[export]['id']))
 
 def dump_config (config):
     cfg_copy = copy.deepcopy(config)
@@ -407,7 +444,7 @@ def dump_config (config):
 
 def get_config_from_file(cfg_file):
     cfg_data = {}
-    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da']
+    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da', 'purge_overlaps', 'prefer_smb']
     cfg_list_options = ['exclude_host', 'exclude_path', 'exclude_share']
     with open(cfg_file) as fp:
         for n, line in enumerate(fp):
@@ -456,6 +493,7 @@ if __name__ == "__main__":
     nfs = True
     smb = True
     rbk_nas_hosts = []
+    smb_add_list = {}
 
     optlist, args = getopt.getopt(sys.argv[1:], 'hc:VDsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
     for opt, a in optlist:
@@ -525,7 +563,7 @@ if __name__ == "__main__":
         smb_add_list = list_compare(share_list, rubrik_share_list, config)
         print ("Shares to add: " + str(smb_add_list))
         if not REPORT_ONLY:
-            add_ntap_shares(rubrik, ntap_host, 'smb', smb_add_list, svm_list, nas_host_data, config)
+            add_ntap_shares(rubrik, 'smb', smb_add_list, nas_host_data, config)
     if nfs:
         export_list = ntap_get_share_list(ntap_host, 'nfs', svm_list, config)
         dprint("NFS EXPORT LIST: " + str(export_list))
@@ -534,7 +572,10 @@ if __name__ == "__main__":
         nfs_add_list = list_compare(export_list, rubrik_export_list, config)
         print ("Exports to add: " + str(nfs_add_list))
         if not REPORT_ONLY:
-            add_ntap_shares(rubrik, ntap_host, 'nfs', nfs_add_list, svm_list, nas_host_data, config)
+            add_ntap_shares(rubrik, 'nfs', nfs_add_list, nas_host_data, config)
+            if config['prefer_smb'].lower() != "false":
+                hs_data = rubrik.get('internal', '/host/share')
+                if share_list == {}:
+                    share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, config)
+                prefer_smb_over_nfs(rubrik, hs_data, share_list)
 
-
-##TODO Think about SMB over-riding NFS
