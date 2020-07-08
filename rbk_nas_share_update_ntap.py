@@ -69,13 +69,13 @@ def add_ntap_host(rubrik, missing_hosts, config):
             add_hosts.append({'hostname': host['address'], 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password']}})
 
     dprint("Host Add: " + str(add_hosts))
-    nas_result = rubrik.post('internal', '/host/bulk', add_hosts, timeout=60)
+    nas_result = rubrik.post('internal', '/host/bulk', add_hosts, timeout=120)
     if config['smb_user']:
         (user, domain) = config['smb_user'].split('@')
         for nas in nas_result['data']:
             nas_creds = {'hostId': str(nas['id']), 'domain': domain, 'username': user, 'password': config['smb_password']}
             dprint("NAS_ADD: " + str(nas_creds))
-            nas_creds_result = rubrik.post('internal', '/host/share_credential', nas_creds, timeout=60)
+            nas_creds_result = rubrik.post('internal', '/host/share_credential', nas_creds, timeout=120)
 
 
 def get_rubrik_share_list(protocol, az_list, hs_data):
@@ -91,7 +91,7 @@ def get_rubrik_share_list(protocol, az_list, hs_data):
 
 def list_compare(array_list, rubrik_list, config):
     add_list = {}
-    print ("ARRAY: " + str(array_list))
+    dprint ("ARRAY: " + str(array_list))
     for zone in array_list:
         shares_to_add = []
         if zone not in config['exclude_host']:
@@ -143,7 +143,6 @@ def ntap_get_svm_list(host, protocol, config):
 # then try to get a hostname from it via DNS
 
     for svm in svm_list.keys():
-        print("DEB: SVM: " + svm)
         int_list = []
         netapp.set_vserver(svm)
         result = netapp.invoke('net-interface-get-iter')
@@ -171,7 +170,6 @@ def ntap_get_svm_list(host, protocol, config):
             int_list.append({'address': addr, "protocols": proto_list})
             cand_list = []
             for int_cand in int_list:
-                print ("CAND: " + str(int_cand))
                 if protocol == "nfs,cifs":
                     if int_cand['protocols'] == ['nfs', 'cifs']:
                         cand_list = [int_cand]
@@ -286,9 +284,6 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
             for qt in qt_attrs:
                 volume = qt.child_get_string('volume')
                 qtree = qt.child_get_string('qtree')
-                print ("JP: " + str(junct_point))
-                print ("VOL: " + volume)
-                print ("QTREE: " + qtree)
                 if qtree == "":
                     try:
                         vol_j = junct_point[volume]
@@ -297,8 +292,6 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
                         continue
                 else:
                     vol_j = junct_point[volume] + "/" + qtree
-                print ("VJ_TYPE: " + str(type(vol_j)))
-                print ("VOL_J:" + str(vol_j))
                 if vol_j != "/" and type(vol_j) is unicode:
                     svm_share_list.append(vol_j + ":" + vol_j)
         elif protocol == "cifs" or protocol == "smb":
@@ -325,7 +318,7 @@ def get_hostid_from_nas_data(host, nas_host_data):
             return (host_inst['id'])
 
 def get_sla_data(rubrik, sla_name):
-    sla_data = rubrik.get('v2', '/sla_domain?primary_cluster=local', timeout=60)
+    sla_data = rubrik.get('v2', '/sla_domain?primary_cluster=local', timeout=120)
     sla_id = ""
     has_archive = False
     for sld in sla_data['data']:
@@ -351,7 +344,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
         elif config['default_sla']:
             sla_name = config['default_sla']
     try:
-        rubrik_fs = rubrik.get('v1', '/fileset_template?name=' + fileset_name, timeout=60)
+        rubrik_fs = rubrik.get('v1', '/fileset_template?name=' + fileset_name, timeout=120)
     except rubrik_cdm.exceptions.APICallException as e:
         sys.stderr.write("Exception callign filset_template: " + str(e) + "\n")
         exit(2)
@@ -365,7 +358,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
         sys.stderr.write("Can't find fileset template: " + fileset_name)
         exit(3)
     payload = {'shareId': share_id, 'templateId': fs_id}
-    if config['array_scan'].lower() == "true":
+    if config['nas_da'].lower() == "true":
         if sla_name != "":
             (sla_id, has_archive) = get_sla_data(rubrik, sla_name)
             if has_archive:
@@ -374,7 +367,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
                 print("Warning: " + sla_name + " does not have an archive.  NAS DA not possible.")
     dprint("PAYLOAD: " + str(payload))
     try:
-        fs_add = rubrik.post('v1', '/fileset', payload, timeout=60)
+        fs_add = rubrik.post('v1', '/fileset', payload, timeout=120)
     except rubrik_cdm.exceptions.APICallException as e:
         sys.stderr.write("Failed to add fileset: " + str(e))
         return()
@@ -386,7 +379,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
         payload = {'managedIds': fs_add_list}
         dprint("PAYLOAD: " + str(payload))
         try:
-            rbk_sla = rubrik.post('internal', '/sla_domain/' + str(sla_id) + '/assign', payload, timeout=60)
+            rbk_sla = rubrik.post('internal', '/sla_domain/' + str(sla_id) + '/assign', payload, timeout=120)
         except rubrik_cdm.exceptions.APICallException as e:
             sys.stderr.write("Failed to assign SLA: " + sla_name + " : " + str(e))
 
@@ -401,7 +394,7 @@ def add_ntap_shares(rubrik, protocol, add_list, nas_host_data, config):
             dprint("PAYLOAD: " + str(payload))
             sh_add_flag = True
             try:
-                share_id = rubrik.post('internal', '/host/share', payload, timeout=60)['id']
+                share_id = rubrik.post('internal', '/host/share', payload, timeout=120)['id']
             except rubrik_cdm.exceptions.APICallException as e:
                 sys.stderr.write("Share add failed: : " + str(e) + "\n")
                 sh_add_flag = False
@@ -425,7 +418,10 @@ def prefer_smb_over_nfs(rubrik, hs_data, share_list):
     hs_nfs= {}
     for share in hs_data['data']:
         if share['shareType'] == "SMB":
-            path = get_share_path(share_list, share['hostname'], share['exportPoint'])
+            try:
+                path = get_share_path(share_list, share['hostname'], share['exportPoint'])
+            except KeyError:
+                continue
             hs_smb[path] = {'id': share['id'], 'host': share['hostname']}
         else:
             hs_nfs[share['exportPoint']] = {'id': share['id'], 'host': share['hostname']}

@@ -146,7 +146,6 @@ def get_rubrik_share_list(protocol, az_list, hs_data):
 
 def list_compare(array_list, rubrik_list, config):
     add_list = {}
-#    print ("ARRAY: " + str(array_list))
     for zone in array_list:
         shares_to_add = []
         if zone not in config['exclude_host']:
@@ -460,7 +459,6 @@ if __name__ == "__main__":
         config['array_password'] = getpass.getpass("Isilon Password: ")
 
     rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
-#    print(nas_host_data)
     az_list = isln_get_share_list(isilon_host, config['array_user'], config['array_password'], '', True, az_list, config)
     missing_hosts = find_missing_hosts(rubrik, az_list, config)
     if missing_hosts:
@@ -483,3 +481,7 @@ if __name__ == "__main__":
         print ("Exports to add: " + str(nfs_add_list))
         if not REPORT_ONLY:
             add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
+
+##TODO nas_da
+##TODO purge_overlaps
+##TODO prefer_smb
