@@ -349,13 +349,10 @@ def add_fileset_sla_to_share(rubrik, config, share_id, protocol):
             rbk_sla = rubrik.post('internal', '/sla_domain/' + str(sla_id) + '/assign', payload, timeout=60)
         except rubrik_cdm.exceptions.APICallException as e:
             sys.stderr.write("Failed to assign SLA: " + str(e))
-
-
-
-
 def get_config_from_file(cfg_file):
     cfg_data = {}
-    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan']
+    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da']
+
     cfg_list_options = ['exclude_host', 'exclude_path', 'exclude_share']
     with open(cfg_file) as fp:
         for n, line in enumerate(fp):
@@ -482,6 +479,5 @@ if __name__ == "__main__":
         if not REPORT_ONLY:
             add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
 
-##TODO nas_da
 ##TODO purge_overlaps
 ##TODO prefer_smb
