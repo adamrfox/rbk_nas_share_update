@@ -201,7 +201,7 @@ def get_host_from_svm_list(svm, protocol):
             return(svm_inst['address'])
     return("")
 
-def purge_overlapping_shares(share_list):
+def purge_overlapping_shares(share_list, purge_type):
     for svm in share_list.values():
         for x in svm:
             x_split = x.split(':')
@@ -212,8 +212,12 @@ def purge_overlapping_shares(share_list):
                 if x_val == y_val:
                     continue
                 if y_val.startswith(x_val + "/"):
-                    dprint("PURGING " + x)
-                    svm.remove(x)
+                    if purge_type == "upper":
+                        dprint("PURGING " + x)
+                        svm.remove(x)
+                    elif purge_type == "lower":
+                        dprint ("PURGING " + y)
+                        svm.remove(y)
     return (share_list)
 
 def ntap_get_share_list(ntap_host, protocol, svm_list, config):
@@ -309,7 +313,8 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
                 svm_share_list.append(sh_name + ":" + path)
         share_list[share_host] = svm_share_list
     if config['purge_overlaps'] != "false":
-        purge_overlapping_shares(share_list)
+        dprint("SHARE_LIST: " + str(share_list))
+        purge_overlapping_shares(share_list, config['purge_overlaps'])
     return (share_list)
 
 def get_hostid_from_nas_data(host, nas_host_data):
@@ -472,6 +477,10 @@ def get_config_from_file(cfg_file):
         cfg_data['array_scan']
     except KeyError:
         cfg_data['array_scan'] = 'false'
+    try:
+        cfg_data['purge_overlaps']
+    except KeyError:
+        cfg_data['purge_overlaps'] = 'false'
     return(cfg_data)
 
 if __name__ == "__main__":

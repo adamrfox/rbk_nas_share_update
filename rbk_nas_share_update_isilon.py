@@ -40,6 +40,25 @@ def vprint (message):
     if VERBOSE or DEBUG:
         print (message)
 
+def purge_overlapping_shares(share_list, purge_type):
+    for z in share_list.values():
+        for x in z:
+            x_split = x.split(':')
+            x_val = x_split[1]
+            for y in z:
+                y_split = y.split(':')
+                y_val = y_split[1]
+                if x_val == y_val:
+                    continue
+                if y_val.startswith(x_val + "/"):
+                    if purge_type == "upper":
+                        dprint("PURGING " + x)
+                        z.remove(x)
+                    elif purge_type == "lower":
+                        dprint("PURGING " + y)
+                        z.remove(y)
+    return (share_list)
+
 def isln_get_share_list(host, user, password, protocol, zone_only, az_list, config):
     hostname = {}
     sh_list = {}
@@ -132,6 +151,8 @@ def isln_get_share_list(host, user, password, protocol, zone_only, az_list, conf
             sh_list[hostname[zone]] = zone_share_list
         except KeyError:
             continue
+    if config['purge_overlaps'] != "false":
+        sh_list = purge_overlapping_shares(sh_list, config['purge_overlaps'])
     return (sh_list, export_id_list)
 
 def get_rubrik_share_list(protocol, az_list, hs_data):
@@ -351,7 +372,7 @@ def add_fileset_sla_to_share(rubrik, config, share_id, protocol):
             sys.stderr.write("Failed to assign SLA: " + str(e))
 def get_config_from_file(cfg_file):
     cfg_data = {}
-    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da']
+    cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password', 'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla', 'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da', 'purge_overlaps']
 
     cfg_list_options = ['exclude_host', 'exclude_path', 'exclude_share']
     with open(cfg_file) as fp:
@@ -389,6 +410,10 @@ def get_config_from_file(cfg_file):
         cfg_data['array_scan']
     except KeyError:
         cfg_data['array_scan'] = 'false'
+    try:
+        cfg_data['purge_overlaps']
+    except KeyError:
+        cfg_data['purge_overlaps'] = 'false'
     return(cfg_data)
 
 if __name__ == "__main__":
@@ -466,6 +491,7 @@ if __name__ == "__main__":
     hs_data = rubrik.get('internal', '/host/share')
     if smb:
         (share_list, export_id_list) = isln_get_share_list(isilon_host, config['array_user'], config['array_password'], 'smb', False, az_list, config)
+        dprint("SMB_SHARE_LIST:  " + str(share_list))
         rubrik_share_list = get_rubrik_share_list('SMB', az_list, hs_data)
         smb_add_list = list_compare(share_list, rubrik_share_list, config)
         print("Shares to add: " + str(smb_add_list))
@@ -479,5 +505,4 @@ if __name__ == "__main__":
         if not REPORT_ONLY:
             add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
 
-##TODO purge_overlaps
 ##TODO prefer_smb
