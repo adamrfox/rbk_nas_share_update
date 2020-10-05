@@ -59,6 +59,24 @@ def purge_overlapping_shares(share_list, purge_type):
                         z.remove(y)
     return (share_list)
 
+def prefer_smb_over_nfs(rubrik, hs_data, share_list):
+    hs_smb = {}
+    hs_nfs = {}
+    for share in hs_data['data']:
+        if share['shareType'] == "SMB":
+            try:
+                path = get_share_path(share_list, share['hostname'], share['exportPoint'])
+            except KeyError:
+                continue
+            hs_smb[path] = {'id': share['id'], 'host': share['hostname']}
+        else:
+            hs_nfs[share['exportPoint']] = {'id': share['id'], 'host': share['hostname']}
+    for export in hs_nfs:
+        if export in hs_smb.keys():
+            print ("Cleaning up " + export)
+            rubrik.delete('internal', '/host/share/' + str(hs_nfs[export]['id']))
+
+
 def isln_get_share_list(host, user, password, protocol, zone_only, az_list, config):
     hostname = {}
     sh_list = {}
@@ -504,5 +522,10 @@ if __name__ == "__main__":
         print ("Exports to add: " + str(nfs_add_list))
         if not REPORT_ONLY:
             add_isilon_shares(rubrik, isilon_host, 'nfs', nfs_add_list, az_list, export_id_list, nas_host_data, config)
+            if config['prefer_smb'].lower() != "false":
+                hs_data = rubrik.get('internal', '/host/share')
+                if share_list == {}:
+                    share_list = ntap_get_share_list(isilon_host, 'smb', az_list, config)
+                prefer_smb_over_nfs(rubrik, hs_data, share_list)
 
 ##TODO prefer_smb
