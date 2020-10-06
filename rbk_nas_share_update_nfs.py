@@ -6,11 +6,19 @@ import getopt
 import getpass
 import rubrik_cdm
 import subprocess
+import copy
 import urllib3
 urllib3.disable_warnings()
 
 def usage():
-    print("Usage goes here")
+    sys.stderr.write("Usage: rbk_nas_share_update_nfs.py [-hDrC] [-c config_file] nfs_server rubrik\n")
+    sys.stderr.write("-h | --help : Prints this message\n")
+    sys.stderr.write("-D | --DEBUG : Turns debug printing on\n")
+    sys.stderr.write("-r | --report_only : Don't add any shares, just show what would be added\n")
+    sys.stderr.write("-C | --dump_config : Show the config variables only\n")
+    sys.stderr.write("-c | --config : specifiy a config file\n")
+    sys.stderr.write("nfs_server : Name or IP of the NFS server\n")
+    sys.stderr.write("rubrik : Name or IP of Rubrik\n")
     exit(0)
 
 def python_input(message):
@@ -22,10 +30,6 @@ def python_input(message):
 
 def dprint(message):
     if DEBUG:
-        print(message)
-
-def vprint(message):
-    if VERBOSE:
         print(message)
 
 def get_export_list(nas_host):
@@ -96,6 +100,13 @@ def get_sla_id(rubrik, sla_name):
             return(sla['id'])
     return("")
 
+def dump_config (config):
+    cfg_copy = copy.deepcopy(config)
+    for k in cfg_copy:
+        if k.find('password') >= 0:
+            cfg_copy[k] = "*********"
+    dprint(cfg_copy)
+
 def get_config_from_file(cfg_file):
     cfg_data = {}
     cfg_options = ['rubrik_user', 'rubrik_password', 'default_fileset', 'default_sla', 'nas_da', 'purge_overlaps']
@@ -136,19 +147,16 @@ if __name__ == "__main__":
     export_list = {}
     rubrik_export_list = {}
     config = {}
-    VERBOSE = False
     DEBUG = False
     DUMP_CONFIG = False
     REPORT_ONLY = False
 
-    optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDrC', ['--help', '--config=', '--verbose', '--DEBUG', '--report', '--dump_config'])
+    optlist, args = getopt.getopt(sys.argv[1:], 'hc:DrC', ['--help', '--config=', '--DEBUG', '--report', '--dump_config'])
     for opt, a in optlist:
         if opt in ('-h', '--help'):
             usage()
         if opt in ('-c', '--config'):
            config = get_config_from_file(a)
-        if opt in ('-v', '--verbose'):
-            VERBOSE = True
         if opt in ('-D', '--DEBUG'):
             VERBOSE = True
             DEBUG = True
@@ -158,11 +166,13 @@ if __name__ == "__main__":
             DUMP_CONFIG = True
             DEBUG = True
 
-    try:
-        (nas_host, rubrik_host) = args
-    except ValueError:
-        usage()
-    dprint("CONFIG " + str(config))
+    if not DUMP_CONFIG:
+        try:
+            (nas_host, rubrik_host) = args
+        except ValueError:
+            usage()
+    if DEBUG or DUMP_CONFIG:
+        dump_config(config)
     if DUMP_CONFIG:
         exit(0)
     if 'rubrik_user' not in config.keys():
