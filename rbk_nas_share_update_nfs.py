@@ -39,6 +39,8 @@ def get_export_list(nas_host):
     exportfs = subprocess.Popen(['showmount', '-e', nas_host], stdout=subprocess.PIPE)
     while not done:
         line = exportfs.stdout.readline()
+        if int(sys.version[0]) > 2:
+            line = str(line.decode('utf-8'))
         if not line:
             done = True
         else:
@@ -110,7 +112,7 @@ def dump_config (config):
 
 def get_config_from_file(cfg_file):
     cfg_data = {}
-    cfg_options = ['rubrik_user', 'rubrik_password', 'default_fileset', 'default_sla', 'nas_da', 'purge_overlaps']
+    cfg_options = ['rubrik_user', 'rubrik_password', 'rubrik_token', 'default_fileset', 'default_sla', 'nas_da', 'purge_overlaps']
     cfg_list_options = ['exclude_path']
     with open(cfg_file) as fp:
         for n, line in enumerate(fp):
@@ -176,13 +178,14 @@ if __name__ == "__main__":
         dump_config(config)
     if DUMP_CONFIG:
         exit(0)
-    if 'rubrik_user' not in config.keys():
-        print("HERE")
+    if 'rubrik_user' not in config.keys() and 'rubrik_token' not in config.keys():
         config['rubrik_user'] = python_input("Rubrik User: ")
-    if 'rubrik_password' not in config.keys():
+    if 'rubrik_password' not in config.keys() and 'rubrik_token' not in config.keys():
         config['rubrik_password'] = getpass.getpass("Rubrik Password: ")
-
-    rubrik = rubrik_cdm.Connect(rubrik_host, config['rubrik_user'], config['rubrik_password'])
+    if 'rubrik_token' not in config.keys():
+        rubrik = rubrik_cdm.Connect(rubrik_host, config['rubrik_user'], config['rubrik_password'])
+    else:
+        rubrik = rubrik_cdm.Connect(rubrik_host, api_token=config['rubrik_token'])
     hs_data = rubrik.get('internal', '/host/share?share_type=NFS', timeout=60)
     export_list = get_export_list(nas_host)
     dprint("EXPORT_LIST = " + str(export_list))
