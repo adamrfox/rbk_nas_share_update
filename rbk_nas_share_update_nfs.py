@@ -45,7 +45,8 @@ def get_export_list(nas_host):
             if not line.startswith("/"):
                 continue
             lf = line.split()
-            export_list.append(lf[0])
+            if lf[0] != "/":
+                export_list.append(lf[0])
     return (export_list)
 
 def get_rubrik_share_list (nas_host, hs_data):
