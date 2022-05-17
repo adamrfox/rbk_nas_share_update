@@ -94,7 +94,7 @@ def get_fileset_id(rubrik, fs_name):
 
 def get_sla_id(rubrik, sla_name):
     try:
-        sla_data = rubrik.get('v2', '/sla_domain?name=' + sla_name)
+        sla_data = rubrik.get('v2', '/sla_domain?primary_cluster_id=local&name=' + sla_name)
     except rubrik_cdm.exceptions.APICallException as e:
         sys.stderr.write("Error calling sla_domain: " + str(e))
         return ("")
