@@ -149,6 +149,9 @@ def get_config_from_file(cfg_file):
         cfg_data['showmount']
     except KeyError:
         cfg_data['showmount'] = "/usr/sbin/showmount"
+    if cfg_data['showmount'] == "":
+        cfg_data['showmount'] = "/usr/sbin/showmount"
+    print("SHOWMOUNT: " + cfg_data['showmount'])
     return(cfg_data)
 
 if __name__ == "__main__":
