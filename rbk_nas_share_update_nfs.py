@@ -122,7 +122,7 @@ def get_config_from_file(cfg_file):
                 continue
             lf = line.split('=')
             if lf[0] in cfg_options:
-                cfg_data[lf[0]] = lf[1]u
+                cfg_data[lf[0]] = lf[1]
             elif lf[0] in cfg_list_options:
                 data = []
                 for e in lf[1].split(','):
