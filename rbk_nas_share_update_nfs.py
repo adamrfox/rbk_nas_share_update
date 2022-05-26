@@ -32,11 +32,11 @@ def dprint(message):
     if DEBUG:
         print(message)
 
-def get_export_list(nas_host):
+def get_export_list(nas_host, cfg_data):
     export_list =[]
     done = False
 
-    exportfs = subprocess.Popen(['showmount', '-e', nas_host], stdout=subprocess.PIPE)
+    exportfs = subprocess.Popen([cfg_data['showmount'], '-e', nas_host], stdout=subprocess.PIPE)
     while not done:
         line = exportfs.stdout.readline()
         if int(sys.version[0]) > 2:
@@ -112,7 +112,8 @@ def dump_config (config):
 
 def get_config_from_file(cfg_file):
     cfg_data = {}
-    cfg_options = ['rubrik_user', 'rubrik_password', 'rubrik_token', 'default_fileset', 'default_sla', 'nas_da', 'purge_overlaps']
+    cfg_options = ['rubrik_user', 'rubrik_password', 'rubrik_token', 'default_fileset', 'default_sla', 'nas_da',
+                   'purge_overlaps', 'showmount']
     cfg_list_options = ['exclude_path']
     with open(cfg_file) as fp:
         for n, line in enumerate(fp):
@@ -121,7 +122,7 @@ def get_config_from_file(cfg_file):
                 continue
             lf = line.split('=')
             if lf[0] in cfg_options:
-                cfg_data[lf[0]] = lf[1]
+                cfg_data[lf[0]] = lf[1]u
             elif lf[0] in cfg_list_options:
                 data = []
                 for e in lf[1].split(','):
@@ -144,6 +145,10 @@ def get_config_from_file(cfg_file):
         cfg_data['purge_overlaps']
     except KeyError:
         cfg_data['purge_overlaps'] = 'false'
+    try:
+        cfg_data['showmount']
+    except KeyError:
+        cfg_data['showmount'] = "/usr/sbin/showmount"
     return(cfg_data)
 
 if __name__ == "__main__":
@@ -187,7 +192,7 @@ if __name__ == "__main__":
     else:
         rubrik = rubrik_cdm.Connect(rubrik_host, api_token=config['rubrik_token'])
     hs_data = rubrik.get('internal', '/host/share?share_type=NFS', timeout=60)
-    export_list = get_export_list(nas_host)
+    export_list = get_export_list(nas_host, config)
     dprint("EXPORT_LIST = " + str(export_list))
     rubrik_export_list = get_rubrik_share_list(nas_host, hs_data)
     dprint("RBK_EXPORT_LIST: " + str(rubrik_export_list))
