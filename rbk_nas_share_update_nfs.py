@@ -30,7 +30,9 @@ def python_input(message):
 
 def dprint(message):
     if DEBUG:
-        print(message)
+        dfh = open(debug_log, 'a')
+        dfh.write(message + "\n")
+        dfh.close()
 
 def get_export_list(nas_host, cfg_data):
     export_list =[]
@@ -160,6 +162,7 @@ if __name__ == "__main__":
     DEBUG = False
     DUMP_CONFIG = False
     REPORT_ONLY = False
+    debug_log = "debug_log.txt"
 
     optlist, args = getopt.getopt(sys.argv[1:], 'hc:DrC', ['--help', '--config=', '--DEBUG', '--report', '--dump_config'])
     for opt, a in optlist:
@@ -175,7 +178,8 @@ if __name__ == "__main__":
         if opt in ('-C', '--dump_config'):
             DUMP_CONFIG = True
             DEBUG = True
-
+            dfh = open(debug_log, "w")
+            dfh.close()
     if not DUMP_CONFIG:
         try:
             (nas_host, rubrik_host) = args

@@ -23,7 +23,9 @@ def vprint(message):
 
 def dprint(message):
     if DEBUG:
-        print(message)
+        dfh = open(debug_log, 'a')
+        dfh.write(message + "\n")
+        dfh.close()
 
 def python_input(message):
     if int(sys.version[0]) > 2:
@@ -46,17 +48,33 @@ def ntap_set_err_check(out):
 def find_missing_hosts(rubrik, svm_list, config):
     missing_hosts = []
     nas_hosts = []
+    found_host = ""
+    exclude = True
     hosts = rubrik.get('v1', '/host?operating_system_type=NONE')
     for host in hosts['data']:
         nas_hosts.append(host['hostname'])
     dprint ("NAS_HOSTS: " + str(nas_hosts))
     dprint ("SVM_LIST: " + str(svm_list))
-    for svm_hosts in svm_list.values():
-        for svm in svm_hosts:
-            if svm == "":
-                continue
-            if (svm['address'] not in nas_hosts) and (svm['address'] not in config['exclude_host']):
-                missing_hosts.append(svm)
+    for svm_hosts in svm_list:
+        found = False
+        dprint("SVM_HOST: " + str(svm_hosts))
+        if svm_hosts in config['exclude_host']:
+            exclude = True
+        else:
+            for svm in svm_list[svm_hosts]:
+                exclude = False
+                dprint("SVM: " + str(svm))
+                found_host = svm['address']
+                if svm == "":
+                    exclude = True
+                    break
+                if svm['address'] in nas_hosts:
+                    found = True
+                    exclude = True
+                    break
+        dprint("FOUND: " + str(found) + " // EXCL: " + str(exclude))
+        if not found and not exclude:
+            missing_hosts.append(found_host)
     return(missing_hosts)
 
 def add_ntap_host(rubrik, missing_hosts, config):
@@ -172,22 +190,22 @@ def ntap_get_svm_list(host, protocol, config):
             for int_cand in int_list:
                 if protocol == "nfs,cifs":
                     if int_cand['protocols'] == ['nfs', 'cifs']:
-                        cand_list = [int_cand]
-                        break
+                        cand_list.append(int_cand)
+#                        break
                     elif int_cand['protocols'] == ["nfs"]:
                         cand_list.append(int_cand)
                     elif int_cand['protocols'] == ["cifs"]:
                         cand_list.append(int_cand)
                 elif protocol == "nfs":
                     if int_cand['protocols'] == ["nfs"]:
-                        cand_list = [int_cand]
-                        break
+                        cand_list.append(int_cand)
+#                        break
                     elif int_cand['protocols'] == ["nfs,cifs"]:
                         cand_list.append(int_cand)
                 elif protocol == "cifs":
                     if int_cand['protocols'] == ["cifs"]:
-                        cand_list = [int_cand]
-                        break
+                        cand_list.append(int_cand)
+#                        break
                     elif int_cand['protocols'] == ["nfs","cifs"]:
                         cand_list.append(int_cand)
             host_list[svm] = cand_list
@@ -440,7 +458,7 @@ def dump_config (config):
     for k in cfg_copy:
         if k.find('password') >= 0:
             cfg_copy[k] = "*********"
-    dprint(cfg_copy)
+    dprint(str(cfg_copy))
 
 
 def get_config_from_file(cfg_file):
@@ -499,8 +517,9 @@ if __name__ == "__main__":
     smb = True
     rbk_nas_hosts = []
     smb_add_list = {}
+    debug_log = "debug_log.txt"
 
-    optlist, args = getopt.getopt(sys.argv[1:], 'hc:VDsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
+    optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
     for opt, a in optlist:
         if opt in ['-h', '--help']:
             usage()
@@ -511,6 +530,8 @@ if __name__ == "__main__":
         if opt in ['-D', '--debug']:
             VERBOSE = True
             DEBUG = True
+            dfh = open(debug_log, "w")
+            dfh.close()
         if opt in ('-s', '--svms'):
             for s in a.split(','):
                 svm_list[s] = ""
