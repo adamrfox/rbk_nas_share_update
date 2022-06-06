@@ -154,12 +154,11 @@ def ntap_get_svm_list(host, protocol, config):
         vs_info = result.child_get('attributes-list').children_get()
         for vs in vs_info:
             vs_type = vs.child_get_string("vserver-type")
-            if vs_type == "data":
+            if vs_type == "data" and not vs.child_get_string('vserver-name') in config['exclude_host']:
                 svm_list[vs.child_get_string('vserver-name')] = ""
 
-# Get list of interfaces on the NetApp.  Find the an applicable interface, grab the IP,
+# Get list of interfaces on the NetApp.  Find the applicable interface, grab the IP,
 # then try to get a hostname from it via DNS
-
     for svm in svm_list.keys():
         int_list = []
         netapp.set_vserver(svm)
@@ -288,7 +287,7 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
                 svm_root = vst_attrs.child_get_string('is-vserver-root')
                 if node_root == "false" and svm_root == "false":
                     volume = vid_attrs.child_get_string('name')
-                    print ("FOUND VOL: " + volume)
+                    dprint ("FOUND VOL: " + volume)
                     junction = vid_attrs.child_get_string('junction-path')
                     junct_point[volume] = junction
             dprint("JUNCTION_POINTS for " + svm + ": " + str(junct_point))
