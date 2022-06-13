@@ -50,7 +50,7 @@ def find_missing_hosts(rubrik, svm_list, config):
     nas_hosts = []
     found_host = ""
     exclude = True
-    hosts = rubrik.get('v1', '/host?operating_system_type=NONE')
+    hosts = rubrik.get('v1', '/host?operating_system_type=NONE&primary_cluster_id=local')
     for host in hosts['data']:
         nas_hosts.append(host['hostname'])
     dprint ("NAS_HOSTS: " + str(nas_hosts))
@@ -79,18 +79,16 @@ def find_missing_hosts(rubrik, svm_list, config):
 
 def curate_missing_hosts(svm_list, nas_hosts, missing_hosts):
     new_missing_hosts = {}
-    print("NAS_HOSTS: " + str(nas_hosts))
     for mh in missing_hosts:
         mh_on_rubrik = False
         for i, svm in enumerate(svm_list[mh]):
-            print("ADDR: " + str(svm_list[mh][i]['address']))
             if svm_list[mh][i]['address'] in nas_hosts:
-                mh_on_rubrk = True
+                mh_on_rubrik = True
                 break
         if not mh_on_rubrik:
             new_missing_hosts[mh] = missing_hosts[mh]
-    print("NEW_MISSING_HOSTS: " + str(new_missing_hosts))
-    exit(2)
+    dprint("NEW_MISSING_HOSTS: " + str(new_missing_hosts))
+    return(new_missing_hosts)
 
 def add_ntap_host(rubrik, missing_hosts, config):
     add_hosts = []
@@ -115,7 +113,7 @@ def get_rubrik_share_list(protocol, az_list, hs_data):
     share_data = {}
     for zone in az_list:
         share_list = []
-        share_host = get_host_from_svm_list(az_list[zone], protocol)
+        share_host = get_host_from_svm_list(az_list[zone], nas_hosts, protocol)
         for share in hs_data['data']:
             if share['hostname'] == share_host and share['shareType'] == protocol.upper():
                 share_list.append(str(share['exportPoint']))
@@ -125,6 +123,7 @@ def get_rubrik_share_list(protocol, az_list, hs_data):
 def list_compare(array_list, rubrik_list, config):
     add_list = {}
     dprint ("ARRAY: " + str(array_list))
+    dprint("RBK_LIST: " + str(rubrik_list))
     for zone in array_list:
         shares_to_add = []
         if zone not in config['exclude_host']:
@@ -136,7 +135,8 @@ def list_compare(array_list, rubrik_list, config):
                             continue
                     if share not in rubrik_list[zone] and share != "None":
                         shares_to_add.append(share)
-        add_list[zone] = shares_to_add
+        if shares_to_add:
+            add_list[zone] = shares_to_add
     return(add_list)
 
 def ntap_get_svm_list(host, protocol, config):
@@ -225,11 +225,11 @@ def ntap_get_svm_list(host, protocol, config):
             host_list[svm] = cand_list
     return(host_list)
 
-def get_host_from_svm_list(svm, protocol):
+def get_host_from_svm_list(svm, nas_hosts, protocol):
     if protocol == "smb":
         protocol = "cifs"
     for svm_inst in svm:
-        if protocol in svm_inst['protocols']:
+        if protocol in svm_inst['protocols'] and svm_inst['address'] in nas_hosts:
             return(svm_inst['address'])
     return("")
 
@@ -252,7 +252,7 @@ def purge_overlapping_shares(share_list, purge_type):
                         svm.remove(y)
     return (share_list)
 
-def ntap_get_share_list(ntap_host, protocol, svm_list, config):
+def ntap_get_share_list(ntap_host, protocol, svm_list, nas_hosts, config):
     share_list = {}
     dprint("SVM_LIST2: " + str(svm_list))
     # Set up NetApp API session
@@ -276,7 +276,7 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, config):
         svm_share_list = []
         junct_point = {}
         out = netapp.set_vserver(svm)
-        share_host = get_host_from_svm_list(svm_list[svm], protocol)
+        share_host = get_host_from_svm_list(svm_list[svm], nas_hosts, protocol)
         if protocol == "nfs":
             api = NaElement('volume-get-iter')
             l1 = NaElement('desired-attributes')
@@ -602,7 +602,7 @@ if __name__ == "__main__":
     hs_data = rubrik.get('internal', '/host/share')
     dprint("RBK_HOST_SHARE: " + str(hs_data))
     if smb:
-        share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, config)
+        share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, nas_hosts, config)
         dprint("SMB SHARE LIST: " + str(share_list))
         rubrik_share_list = get_rubrik_share_list('smb', svm_list, hs_data)
         dprint("RBK SHARE LIST: " + str(rubrik_share_list))
@@ -611,7 +611,7 @@ if __name__ == "__main__":
         if not REPORT_ONLY:
             add_ntap_shares(rubrik, 'smb', smb_add_list, nas_host_data, config)
     if nfs:
-        export_list = ntap_get_share_list(ntap_host, 'nfs', svm_list, config)
+        export_list = ntap_get_share_list(ntap_host, 'nfs', svm_list, nas_hosts, config)
         dprint("NFS EXPORT LIST: " + str(export_list))
         rubrik_export_list = get_rubrik_share_list('nfs', svm_list, hs_data)
         dprint("RBK EXPORT LIST: " + str(rubrik_export_list))
@@ -622,7 +622,7 @@ if __name__ == "__main__":
             if config['prefer_smb'].lower() != "false":
                 hs_data = rubrik.get('internal', '/host/share')
                 if share_list == {}:
-                    share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, config)
+                    share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, nas_host, config)
                 prefer_smb_over_nfs(rubrik, hs_data, share_list)
 
 ##TODO Note assumption on host add...all protocols ar the same within interfaces in an SVM
