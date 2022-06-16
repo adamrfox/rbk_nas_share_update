@@ -454,22 +454,24 @@ def get_share_path(share_list, host, share_name):
             return(path)
     return ("")
 
-def prefer_smb_over_nfs(rubrik, hs_data, share_list):
-    hs_smb = {}
+def prefer_smb_over_nfs(nfs_add_list, share_list):
     hs_nfs= {}
-    for share in hs_data['data']:
-        if share['shareType'] == "SMB":
-            try:
-                path = get_share_path(share_list, share['hostname'], share['exportPoint'])
-            except KeyError:
-                continue
-            hs_smb[path] = {'id': share['id'], 'host': share['hostname']}
-        else:
-            hs_nfs[share['exportPoint']] = {'id': share['id'], 'host': share['hostname']}
-    for export in hs_nfs:
-        if export in hs_smb.keys():
-            print ("Cleaning up " + export)
-            rubrik.delete('internal', '/host/share/' + str(hs_nfs[export]['id']))
+    for svm in nfs_add_list:
+        for path in nfs_add_list[svm]:
+            purge = False
+            for smb_share in share_list[svm]:
+                sf = smb_share.split(':')
+                if path == sf[1]:
+                    purge = True
+                    break
+            if not purge:
+                try:
+                    hs_nfs[svm]
+                except:
+                    hs_nfs[svm] = []
+                hs_nfs[svm].append(path)
+    dprint("PREFER NFS LIST: " + str(hs_nfs))
+    return(hs_nfs)
 
 def dump_config(config):
     cfg_copy = copy.deepcopy(config)
@@ -619,13 +621,13 @@ if __name__ == "__main__":
         rubrik_export_list = get_rubrik_share_list('nfs', svm_list, hs_data)
         dprint("RBK EXPORT LIST: " + str(rubrik_export_list))
         nfs_add_list = list_compare(export_list, rubrik_export_list, config)
+        if config['prefer_smb'].lower() != "false":
+            if share_list == {}:
+                share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, nas_hosts, missing_hosts, config)
+            nfs_add_list = prefer_smb_over_nfs(nfs_add_list, share_list)
         print ("Exports to add: " + str(nfs_add_list))
         if not REPORT_ONLY:
             add_ntap_shares(rubrik, 'nfs', nfs_add_list, nas_host_data, config)
-            if config['prefer_smb'].lower() != "false":
-                hs_data = rubrik.get('internal', '/host/share')
-                if share_list == {}:
-                    share_list = ntap_get_share_list(ntap_host, 'smb', svm_list, nas_host, missing_hosts, config)
-                prefer_smb_over_nfs(rubrik, hs_data, share_list)
+
 
 ##TODO Note assumption on host add...all protocols ar the same within interfaces in an SVM
