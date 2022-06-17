@@ -455,7 +455,7 @@ def get_share_path(share_list, host, share_name):
     return ("")
 
 def prefer_smb_over_nfs(nfs_add_list, share_list):
-    hs_nfs= {}
+    hs_nfs = {}
     for svm in nfs_add_list:
         for path in nfs_add_list[svm]:
             purge = False
@@ -467,7 +467,7 @@ def prefer_smb_over_nfs(nfs_add_list, share_list):
             if not purge:
                 try:
                     hs_nfs[svm]
-                except:
+                except KeyError:
                     hs_nfs[svm] = []
                 hs_nfs[svm].append(path)
     dprint("PREFER NFS LIST: " + str(hs_nfs))
@@ -486,7 +486,7 @@ def get_config_from_file(cfg_file):
     cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password',
                    'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla',
                    'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da', 'purge_overlaps',
-                   'prefer_smb','add_hosts']
+                   'prefer_smb','add_hosts', 'rubrik_token']
     cfg_list_options = ['exclude_host', 'exclude_path', 'exclude_share']
     with open(cfg_file) as fp:
         for n, line in enumerate(fp):
@@ -578,10 +578,11 @@ if __name__ == "__main__":
     if DUMP_CONFIG:
         exit(0)
 
-    if config['rubrik_user'] == "":
-        config['rubrik_user'] = python_input("Rubrik User: ")
-    if config['rubrik_password'] == "":
-        config['rubrik_password'] = getpass.getpass("Rubrik Password: ")
+    if config['rubrik_token'] == "":
+        if config['rubrik_user'] == "":
+            config['rubrik_user'] = python_input("Rubrik User: ")
+        if config['rubrik_password'] == "":
+            config['rubrik_password'] = getpass.getpass("Rubrik Password: ")
     if config['array_user'] == "":
         config['array_user'] = python_input("Isilon User: ")
     if config['array_password'] == "":
@@ -592,7 +593,10 @@ if __name__ == "__main__":
         p_str = "nfs"
     else:
         p_str = "nfs,cifs"
-    rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
+    if config['rubrik_token'] == "":
+        rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
+    else:
+        rubrik = rubrik_cdm.Connect(rubrik_host, api_token=config['rubrik_token'])
     svm_list = ntap_get_svm_list(ntap_host, p_str, config)
     dprint("SVM_LIST1: " + str(svm_list))
     if config['add_hosts'] == "true":
