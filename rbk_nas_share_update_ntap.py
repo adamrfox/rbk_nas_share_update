@@ -92,12 +92,15 @@ def curate_missing_hosts(svm_list, nas_hosts, missing_hosts):
 
 def add_ntap_host(rubrik, missing_hosts, config):
     add_hosts = []
+    print("MISS: " + str(missing_hosts))
     for host in missing_hosts:
-        print("Adding NetApp Host: " + host['address'])
+        miss_host = missing_hosts[host]
+        print("Adding NetApp Host: " + miss_host)
         if str(config['array_scan']).lower() == "true":
-            add_hosts.append({'hostname': host['address'], 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password'], 'isNetAppSnapDiffEnabled': True}})
+            add_hosts.append({'hostname': miss_host, 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password'], 'isNetAppSnapDiffEnabled': True, 'apiHostname': mgmt_lif[host]}})
+
         else:
-            add_hosts.append({'hostname': host['address'], 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password']}})
+            add_hosts.append({'hostname': host_host, 'hasAgent': False, 'nasConfig': {'vendorType': 'NETAPP', 'apiUsername': config['api_user'], 'apiPassword': config['api_password'], 'apiHostname': mgmt_lif[host]}})
 
     dprint("Host Add: " + str(add_hosts))
     nas_result = rubrik.post('internal', '/host/bulk', add_hosts, timeout=120)
@@ -145,6 +148,10 @@ def ntap_get_svm_list(host, protocol, config):
     host_lookup = ()
     share_list = {}
     host_list = {}
+    proto_found = False
+    mgmt_found = False
+    mgmt_lif = {}
+    srv_list = {}
 
     # Set up NetApp API session
     try:
@@ -179,6 +186,7 @@ def ntap_get_svm_list(host, protocol, config):
         netapp.set_vserver(svm)
         result = netapp.invoke('net-interface-get-iter')
         ntap_invoke_err_check(result)
+#        print(result.sprintf())
         try:
             ints = result.child_get('attributes-list').children_get()
         except AttributeError:
@@ -187,6 +195,7 @@ def ntap_get_svm_list(host, protocol, config):
             int_name = i.child_get_string('interface-name')
             protocols = i.child_get('data-protocols').children_get()
             addr = i.child_get_string('address')
+            services = i.child_get('service-names').children_get()
             try:
                 host_lookup = socket.gethostbyaddr(addr)
                 addr = host_lookup[0]
@@ -199,31 +208,72 @@ def ntap_get_svm_list(host, protocol, config):
                 proto = proto.replace('<', '>')
                 pf = proto.split('>')
                 proto_list.append(pf[2])
-            int_list.append({'address': addr, "protocols": proto_list})
-            cand_list = []
-            for int_cand in int_list:
-                if protocol == "nfs,cifs":
-                    if int_cand['protocols'] == ['nfs', 'cifs']:
-                        cand_list.append(int_cand)
-#                        break
-                    elif int_cand['protocols'] == ["nfs"]:
-                        cand_list.append(int_cand)
-                    elif int_cand['protocols'] == ["cifs"]:
-                        cand_list.append(int_cand)
-                elif protocol == "nfs":
-                    if int_cand['protocols'] == ["nfs"]:
-                        cand_list.append(int_cand)
-#                        break
-                    elif int_cand['protocols'] == ["nfs,cifs"]:
-                        cand_list.append(int_cand)
-                elif protocol == "cifs":
-                    if int_cand['protocols'] == ["cifs"]:
-                        cand_list.append(int_cand)
-#                        break
-                    elif int_cand['protocols'] == ["nfs","cifs"]:
-                        cand_list.append(int_cand)
-            host_list[svm] = cand_list
-    return(host_list)
+            int_srvs = []
+            for s in services:
+                srv = s.sprintf()
+                srv = srv.replace('<', '>')
+                sf = srv.split('>')
+                int_srvs.append(sf[2])
+            int_list.append({'address': addr, "protocols": proto_list, 'services': int_srvs})
+        cand_list = []
+        for int_cand in int_list:
+            if protocol == "nfs,cifs":
+                if int_cand['protocols'] == ['nfs', 'cifs']:
+                    cand_list.append(int_cand)
+                    proto_found = True
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand['address']
+                            mgmt_found = True
+                            break
+                elif int_cand['protocols'] == ["nfs"]:
+                    cand_list.append(int_cand)
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand['address']
+                            mgmt_found = True
+                elif int_cand['protocols'] == ["cifs"]:
+                    cand_list.append(int_cand)
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand['address']
+                            mgmt_found = True
+                else:
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand['address']
+                            mgmt_found = True
+            elif not proto_found and int_cand['protocols'] == "nfs":
+                if int_cand['protocols'] == ["nfs"]:
+                    cand_list.append(int_cand)
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand
+                            mgmt_found = True
+#                           break
+                elif not proto_found and ['protocols'] == ["nfs,cifs"]:
+                    cand_list.append(int_cand)
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand
+                            mgmt_found = True
+            elif not mgmt_found and protocol == "cifs":
+                if int_cand['protocols'] == ["cifs"]:
+                    cand_list.append(int_cand)
+                    for svc in int_cand['services']:
+                        if svc == "management_https":
+                            mgmt_lif[svm] = int_cand
+                            mgmt_found = True
+#                           break
+                elif int_cand['protocols'] == ["nfs","cifs"]:
+                    cand_list.append(int_cand)
+            elif not mgmt_found:
+                for svc in int_cand['services']:
+                    if svc == "management_https":
+                        mgmt_lif[svm] = int_cand
+                        mgmt_found = True
+        host_list[svm] = cand_list
+    return(host_list, mgmt_lif)
 
 def get_host_from_svm_list(svm, nas_hosts, missing_hosts, protocol):
     if protocol == "smb":
@@ -541,6 +591,7 @@ if __name__ == "__main__":
     rbk_nas_hosts = []
     smb_add_list = {}
     debug_log = "debug_log.txt"
+    mgmt_lif = {}
 
     optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
     for opt, a in optlist:
@@ -597,8 +648,9 @@ if __name__ == "__main__":
         rubrik = rubrik_cdm.Connect (rubrik_host, config['rubrik_user'], config['rubrik_password'])
     else:
         rubrik = rubrik_cdm.Connect(rubrik_host, api_token=config['rubrik_token'])
-    svm_list = ntap_get_svm_list(ntap_host, p_str, config)
+    (svm_list, mgmt_lif) = ntap_get_svm_list(ntap_host, p_str, config)
     dprint("SVM_LIST1: " + str(svm_list))
+    dprint("MGMT_LIFS: " + str(mgmt_lif))
     if config['add_hosts'] == "true":
         (missing_hosts, nas_hosts) = find_missing_hosts(rubrik, svm_list, config)
         dprint("MISSING HOSTS: " + str(missing_hosts))
