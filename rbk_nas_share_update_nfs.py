@@ -178,14 +178,14 @@ if __name__ == "__main__":
         if opt in ('-C', '--dump_config'):
             DUMP_CONFIG = True
             DEBUG = True
-            dfh = open(debug_log, "w")
-            dfh.close()
     if not DUMP_CONFIG:
         try:
             (nas_host, rubrik_host) = args
         except ValueError:
             usage()
     if DEBUG or DUMP_CONFIG:
+        dfh = open(debug_log, "w")
+        dfh.close()
         dump_config(config)
     if DUMP_CONFIG:
         exit(0)

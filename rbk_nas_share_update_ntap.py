@@ -13,13 +13,17 @@ import ssl
 import copy
 
 def usage():
-    print ("Usage goes here")
+    sys.stderr.write("Usage: rbk_nas_share_update_ntap.py [-hrDC] [-s svm_list] [-p protocol] -c config ntap rubrik\n")
+    sys.stderr.write("-h | --help : Prints Usage\n")
+    sys.stderr.write("-D | --debug : Debug mode. Creates a file with extra debugging info\n")
+    sys.stderr.write("-C | --dump_config : Dumps the config to the debug file.  Included with -D\n")
+    sys.stderr.write("-r | --report : Only shows what would be updated, updates are not done\n")
+    sys.stderr.write("-s | --svms= : Provide a comma-separted list of SVMs to process\n")
+    sys.stderr.write("-p | --protocol= : Only process one protocol [nfs|smb]\n")
+    sys.stderr.write("-c | --config= : Location of config file [required]\n")
+    sys.stderr.write("ntap : Name/IP of the cluster admin LIF of a NTAP cluster\n")
+    sys.stderr.write("rubrik : Name/IP of a Rubrik cluster node\n")
     exit(0)
-
-def vprint(message):
-    if VERBOSE:
-        print(message)
-    return()
 
 def dprint(message):
     if DEBUG:
@@ -535,7 +539,7 @@ def get_config_from_file(cfg_file):
     cfg_data = {}
     cfg_options = ['rubrik_user', 'rubrik_password', 'array_user', 'array_password', 'smb_user', 'smb_password',
                    'api_user', 'api_password', 'api_host', 'default_nfs_fileset', 'default_smb_fileset','default_sla',
-                   'default_nfs_sla', 'default_smb_sla', 'force_smb_acl', 'array_scan', 'nas_da', 'purge_overlaps',
+                   'default_nfs_sla', 'default_smb_sla', 'array_scan', 'nas_da', 'purge_overlaps',
                    'prefer_smb','add_hosts', 'rubrik_token']
     cfg_list_options = ['exclude_host', 'exclude_path', 'exclude_share']
     with open(cfg_file) as fp:
@@ -581,7 +585,6 @@ if __name__ == "__main__":
     export_list = []
     rubrik_export_list = {}
     config = {}
-    VERBOSE = False
     DEBUG = False
     DUMP_CONFIG = False
     REPORT_ONLY = False
@@ -593,16 +596,13 @@ if __name__ == "__main__":
     debug_log = "debug_log.txt"
     mgmt_lif = {}
 
-    optlist, args = getopt.getopt(sys.argv[1:], 'hc:vDsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
+    optlist, args = getopt.getopt(sys.argv[1:], 'hc:Dsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
     for opt, a in optlist:
         if opt in ['-h', '--help']:
             usage()
         if opt in ['-c', '--config']:
             config = get_config_from_file(a)
-        if opt in ['-v', '--verbose']:
-            VERBOSE = True
         if opt in ['-D', '--debug']:
-            VERBOSE = True
             DEBUG = True
             dfh = open(debug_log, "w")
             dfh.close()
@@ -685,5 +685,3 @@ if __name__ == "__main__":
         if not REPORT_ONLY:
             add_ntap_shares(rubrik, 'nfs', nfs_add_list, nas_host_data, config)
 
-
-##TODO Note assumption on host add...all protocols ar the same within interfaces in an SVM
