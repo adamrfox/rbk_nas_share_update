@@ -222,7 +222,7 @@ def ntap_get_svm_list(host, protocol, config):
         cand_list = []
         for int_cand in int_list:
             if protocol == "nfs,cifs":
-                if int_cand['protocols'] == ['nfs', 'cifs']:
+                if 'nfs' in int_cand['protocols'] and 'cifs' in int_cand['protocols']:
                     cand_list.append(int_cand)
                     proto_found = True
                     for svc in int_cand['services']:
@@ -230,13 +230,13 @@ def ntap_get_svm_list(host, protocol, config):
                             mgmt_lif[svm] = int_cand['address']
                             mgmt_found = True
                             break
-                elif int_cand['protocols'] == ["nfs"]:
+                elif 'nfs' in int_cand['protocols']:
                     cand_list.append(int_cand)
                     for svc in int_cand['services']:
                         if svc == "management_https":
                             mgmt_lif[svm] = int_cand['address']
                             mgmt_found = True
-                elif int_cand['protocols'] == ["cifs"]:
+                elif 'cifs' in int_cand['protocols']:
                     cand_list.append(int_cand)
                     for svc in int_cand['services']:
                         if svc == "management_https":
@@ -247,8 +247,8 @@ def ntap_get_svm_list(host, protocol, config):
                         if svc == "management_https":
                             mgmt_lif[svm] = int_cand['address']
                             mgmt_found = True
-            elif not proto_found and int_cand['protocols'] == "nfs":
-                if int_cand['protocols'] == ["nfs"]:
+            elif not proto_found and 'nfs' in int_cand['protocols']:
+                if 'nfs' in int_cand['protocols']:
                     cand_list.append(int_cand)
                     for svc in int_cand['services']:
                         if svc == "management_https":
