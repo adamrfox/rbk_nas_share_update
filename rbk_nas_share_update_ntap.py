@@ -384,7 +384,11 @@ def ntap_get_share_list(ntap_host, protocol, svm_list, nas_hosts, missing_hosts,
                         dprint("KEY_ERROR")
                         continue
                 else:
-                    vol_j = junct_point[volume] + "/" + qtree
+                    try:
+                        vol_j = junct_point[volume] + "/" + qtree
+                    except TypeError:
+                        dprint("Flex Group volume?")
+                        continue
                 if vol_j != "/":
 #                if vol_j != "/" and type(vol_j) is unicode:
                     svm_share_list.append(str(vol_j) + ":" + str(vol_j))
@@ -468,6 +472,7 @@ def add_fileset_and_sla_to_share(rubrik, config, share_id, protocol):
         return()
     if sla_name != "":
         fs_add_list.append(fs_add['id'])
+        (sla_id, has_archive) = get_sla_data(rubrik, sla_name)
         if sla_id == "":
             sys.stderr.write("Can't find SLA: " + sla_name)
             exit(4)
@@ -596,7 +601,7 @@ if __name__ == "__main__":
     debug_log = "debug_log.txt"
     mgmt_lif = {}
 
-    optlist, args = getopt.getopt(sys.argv[1:], 'hc:Dsrp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
+    optlist, args = getopt.getopt(sys.argv[1:], 'hc:Ds:rp:C', ['--help', '--config=', '--verbose', '--debug', '--svms=', '--report', '--protocol=', '--dump_config'])
     for opt, a in optlist:
         if opt in ['-h', '--help']:
             usage()
